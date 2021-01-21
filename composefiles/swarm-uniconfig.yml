@@ -27,13 +27,14 @@ services:
       - ${UC_CONFIG_PATH}/config/logback.xml:/opt/uniconfig-frinx/config/logback.xml
       - ${UC_CONFIG_PATH}/cache:/opt/uniconfig-frinx/cache
       - ${UC_CONFIG_PATH}/config/.keystore:/opt/uniconfig-frinx/config/.keystore
+      - ${UC_CONFIG_PATH}/config/frinx.license.cfg:/opt/uniconfig-frinx/config/frinx.license.cfg
     deploy:
       placement:
         constraints:
           - node.hostname == TEMPLATE-HOSTNAME
       mode: replicated
       replicas: 1
-    command: -l ${LICENSE}
+    # command: -l ${LICENSE}
     healthcheck:
       test: curl --insecure -o /dev/null --user admin:admin --silent --write-out "%{http_code}" -X POST -d "{\"input\":{\"target-nodes\":{\"node\":[]}}}" 'https://127.0.0.1:8181/rests/operations/uniconfig-manager:calculate-diff' -H "Accept:application/json" -H "Content-Type:application/json" || exit 1
       interval: 10s

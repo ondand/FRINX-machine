@@ -11,9 +11,10 @@ services:
       - FC_TEMPLATES=/etc/krakend/templates
       # - FC_OUT=/etc/krakend/output.json
     image: frinx/krakend:1.2.0
+
     volumes:
-      - ${UF_CONFIG_PATH}/krakend:/etc/krakend
-      - ${UF_CONFIG_PATH}/krakend/tls/${KRAKEND_TLS_PROTOCOL}:/etc/krakend/partials/tls
+      - ${UF_CONFIG_PATH}/krakend:/etc/krakend:ro
+      - ${UF_CONFIG_PATH}/krakend/tls/${KRAKEND_TLS_PROTOCOL}:/etc/krakend/partials/tls:ro
     logging:
       driver: "json-file"
       options:
@@ -29,21 +30,45 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
-      mode: replicated
-      replicas: 1
-    # healthcheck:
-    #   test: curl --silent --write-out 'HTTPSTATUS:%{http_code}' -X GET 'http://127.0.0.1:8080/__health' || exit 1
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 5
-    #   start_period: 20s
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+          # cpu-shares: '' # https://docs.datadoghq.com/security_monitoring/default_rules/cis-docker-1.2.0-5.11/ , https://github.com/moby/moby/issues/36388
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: continue
+        monitor: 60s
+        max_failure_ratio: 0.3
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    security_opt:
+      - no-new-privileges:true
+
+
+
+
+    # security_opt:
+    #   - no-new-privileges:true
+    # mem_limit: 512m
+    # mem_reservation: 128M
 
   conductor-server:
     environment:
       - CONFIG_PROP=config.properties
     image: frinx/uniflow-conductor-server:1.0.0
     volumes:
-      -  ${UF_CONFIG_PATH}/conductor/config.properties:/app/config/config.properties
+      -  ${UF_CONFIG_PATH}/conductor/config.properties:/app/config/config.properties:ro
     logging:
       driver: "json-file"
       options:
@@ -53,14 +78,31 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '8.25'              
+          memory: 12G
+        reservations:
+          cpus: '0.25'
+          memory: 2G
     healthcheck:
       test: wget --spider localhost:8080/api/health
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 60s
+
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:6.7.1
@@ -74,8 +116,8 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx1024m"
     volumes:
       - uniflow_elastic_data:/usr/share/elasticsearch/data
-      -  ${UF_CONFIG_PATH}/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
-      -  ${UF_CONFIG_PATH}/elasticsearch/backup.sh:/usr/share/elasticsearch/backup.sh
+      -  ${UF_CONFIG_PATH}/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      -  ${UF_CONFIG_PATH}/elasticsearch/backup.sh:/usr/share/elasticsearch/backup.sh:ro
     healthcheck:
       test: curl -X GET 'localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s'
       interval: 10s
@@ -86,12 +128,27 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.75'              
+          memory: 1024M
+        reservations:
+          cpus: '0.5'
+          memory: 1024M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   dashboard:
     # TODO: make stable release and change 'latest' version to a stable one
-    image: frinx/frinx-dashboard:1.0.1
+    image: frinx/frinx-dashboard:latest
     logging:
       driver: "json-file"
       options:
@@ -101,15 +158,31 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: curl --silent -o /dev/null  --write-out 'HTTPSTATUS:%{http_code}\n' -X GET 'http://127.0.0.1:5001' || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  #   healthcheck:
-  #     test: curl --silent -o /dev/null  --write-out 'HTTPSTATUS:%{http_code}\n' -X GET 'http://127.0.0.1:8888' || exit 1
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 10s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
 
   postgresql:
     image: postgres:12.2
@@ -130,13 +203,28 @@ services:
       start_period: 10s
     volumes:
       - uniflow_postgresql_data:/var/lib/postgresql/data
-      -  ${UF_CONFIG_PATH}/uniflow-postgres:/docker-entrypoint-initdb.d
+      - ${UF_CONFIG_PATH}/uniflow-postgres:/docker-entrypoint-initdb.d:ro
     deploy:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   schellar:
     image: frinx/uniflow-schellar:1.9.2
@@ -156,14 +244,29 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: wget --spider -q conductor-server:8080/api/health && wget --spider -q 127.0.0.1:3000/schedule && nc -z postgresql:5432
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   workflow-proxy:
     image: frinx/workflow-proxy:1.0.3
@@ -182,8 +285,23 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   uniconfig-ui:
     image: frinx/uniconfig-ui:2.0.3
@@ -196,8 +314,19 @@ services:
       placement:
         constraints:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 10s
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     environment:
       - HTTPS=false
       - OPENSSL_COMMAND_TO_GEN_CERT=openssl req -nodes -new -x509 -days 360 -keyout key.pem -out cert.pem -subj "/C=US/ST=Oregon/L=Portland/O=Company Name/OU=Org/CN=www.example.com"
@@ -208,7 +337,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   uniflow-ui:
     image: frinx/uniflow-ui:2.0.2
@@ -223,13 +355,23 @@ services:
           - node.hostname == ${CONSTRAINT_HOSTNAME}
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'              
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: curl --silent --write-out 'HTTPSTATUS:%{http_code}' -X GET 'http://127.0.0.1:3000'
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
 volumes:
   uniflow_elastic_data:
@@ -237,6 +379,12 @@ volumes:
   uniflow_postgresql_data:
     name: uniflow_postgresql_data
 
+# docker network create -d overlay --opt encrypted frinx-machine
+
 networks:
-  default:
+  default:    
     name: frinx-machine
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+
